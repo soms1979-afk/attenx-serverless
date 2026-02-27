@@ -1,90 +1,57 @@
 export default async function handler(req, res) {
-  const SUPABASE_DOMAIN = 'udfphsvzhigupkhdagyx.supabase.co';
-
-  // ===== 1. DYNAMIC CORS (NO WILDCARD) =====
-  const allowedOrigins = [
+   const allowedOrigins = [
     'http://localhost:3000',
     'https://your-frontend-domain.vercel.app', // change this later
   ];
+  // Later change to your production frontend domain
 
-  const origin = req.headers.origin;
-
-  if (allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-  }
-
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  // --- CORS HEADERS ---
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigin);
   res.setHeader(
-    'Access-Control-Allow-Methods',
-    'GET,POST,PUT,DELETE,OPTIONS'
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,DELETE,OPTIONS"
   );
   res.setHeader(
-    'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Requested-With'
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, x-supabase-api-version, apikey"
   );
 
-  // ===== 2. HANDLE PREFLIGHT EARLY =====
-  if (req.method === 'OPTIONS') {
+  // Handle preflight request
+  if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // ===== 3. BUILD TARGET URL =====
-  const targetUrl = `https://${SUPABASE_DOMAIN}${req.url.replace(
-    '/api/supabase',
-    ''
-  )}`;
-
-  // ===== 4. CLEAN REQUEST HEADERS =====
-  const cleanHeaders = {};
-  const forbiddenHeaders = [
-    'host',
-    'connection',
-    'content-length',
-    'transfer-encoding',
-  ];
-
-  Object.keys(req.headers).forEach((key) => {
-    if (!forbiddenHeaders.includes(key.toLowerCase())) {
-      cleanHeaders[key] = req.headers[key];
-    }
-  });
-
-  // Force correct host for Supabase
-  cleanHeaders['host'] = SUPABASE_DOMAIN;
-
   try {
-    const fetchOptions = {
+    const { path = [] } = req.query;
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+    const targetUrl = `${supabaseUrl}/${path.join("/")}${
+      req.url.includes("?") ? "?" + req.url.split("?")[1] : ""
+    }`;
+
+    const response = await fetch(targetUrl, {
       method: req.method,
-      headers: cleanHeaders,
-    };
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": req.headers.authorization || "",
+        "apikey": supabaseServiceKey,
+        "x-supabase-api-version":
+          req.headers["x-supabase-api-version"] || "2024-01-01"
+      },
+      body:
+        req.method !== "GET" && req.method !== "HEAD"
+          ? JSON.stringify(req.body)
+          : undefined
+    });
 
-    // ===== 5. FORWARD BODY IF PRESENT =====
-    if (
-      req.method !== 'GET' &&
-      req.method !== 'HEAD' &&
-      req.body
-    ) {
-      fetchOptions.body =
-        typeof req.body === 'string'
-          ? req.body
-          : JSON.stringify(req.body);
-    }
-
-    // ===== 6. FORWARD REQUEST =====
-    const response = await fetch(targetUrl, fetchOptions);
     const data = await response.text();
 
-    // Mirror content type
-    res.setHeader(
-      'Content-Type',
-      response.headers.get('content-type') || 'application/json'
-    );
+    res.status(response.status).send(data);
 
-    return res.status(response.status).send(data);
-  } catch (err) {
-    return res.status(500).json({
-      error: 'Proxy failed',
-      details: err.message,
-    });
+  } catch (error) {
+    console.error("Proxy Error:", error);
+    res.status(500).json({ error: "Internal Server Error" });
   }
 }
