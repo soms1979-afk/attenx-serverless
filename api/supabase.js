@@ -1,8 +1,19 @@
 export default async function handler(req, res) {
   const SUPABASE_DOMAIN = 'udfphsvzhigupkhdagyx.supabase.co';
 
-  // 🔥 1. CORS HEADERS (MANDATORY)
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // ===== 1. DYNAMIC CORS (NO WILDCARD) =====
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'https://your-frontend-domain.vercel.app', // change this later
+  ];
+
+  const origin = req.headers.origin;
+
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader(
     'Access-Control-Allow-Methods',
     'GET,POST,PUT,DELETE,OPTIONS'
@@ -12,17 +23,18 @@ export default async function handler(req, res) {
     'Content-Type, Authorization, X-Requested-With'
   );
 
-  // 🔥 2. HANDLE PREFLIGHT EARLY
+  // ===== 2. HANDLE PREFLIGHT EARLY =====
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
 
+  // ===== 3. BUILD TARGET URL =====
   const targetUrl = `https://${SUPABASE_DOMAIN}${req.url.replace(
     '/api/supabase',
     ''
   )}`;
 
-  // Clean headers
+  // ===== 4. CLEAN REQUEST HEADERS =====
   const cleanHeaders = {};
   const forbiddenHeaders = [
     'host',
@@ -46,6 +58,7 @@ export default async function handler(req, res) {
       headers: cleanHeaders,
     };
 
+    // ===== 5. FORWARD BODY IF PRESENT =====
     if (
       req.method !== 'GET' &&
       req.method !== 'HEAD' &&
@@ -57,6 +70,7 @@ export default async function handler(req, res) {
           : JSON.stringify(req.body);
     }
 
+    // ===== 6. FORWARD REQUEST =====
     const response = await fetch(targetUrl, fetchOptions);
     const data = await response.text();
 
@@ -66,9 +80,9 @@ export default async function handler(req, res) {
       response.headers.get('content-type') || 'application/json'
     );
 
-    res.status(response.status).send(data);
+    return res.status(response.status).send(data);
   } catch (err) {
-    res.status(500).json({
+    return res.status(500).json({
       error: 'Proxy failed',
       details: err.message,
     });
